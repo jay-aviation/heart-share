@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>爱心</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    width: 100vw; height: 100vh; overflow: hidden;
+    background: #0a0a0a;
+    cursor: pointer;
+    user-select: none;
+    font-family: 'Microsoft YaHei', sans-serif;
+  }
+  canvas { display: block; }
+  .hint {
+    position: fixed; bottom: 40px; width: 100%; text-align: center;
+    color: rgba(255,255,255,0.5); font-size: 16px;
+    animation: fade 2s ease-in-out infinite; pointer-events: none; z-index: 10;
+  }
+  @keyframes fade { 0%,100% { opacity: 0.3; } 50% { opacity: 0.8; } }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="hint">💛 点击屏幕 释放更多爱心 💛</div>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ---- 爱心形状 (数学公式) ----
+function heartPath(x, y, s) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(s, s);
+  ctx.beginPath();
+  // 参数方程画爱心
+  for (let t = 0; t <= Math.PI * 2; t += 0.01) {
+    const px = 16 * Math.pow(Math.sin(t), 3);
+    const py = -(13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t));
+    if (t === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+  ctx.restore();
+}
+
+// ---- 粒子系统 ----
+const hearts = [];
+const sparkles = [];
+
+// 爱心配色
+const palettes = [
+  ['#ff4081', '#ff80ab', '#f50057'],
+  ['#ff6e6e', '#ff3d3d', '#ff1744'],
+  ['#e040fb', '#ea80fc', '#aa00ff'],
+  ['#ff6d00', '#ff9100', '#ffab40'],
+  ['#ff4081', '#7c4dff', '#00e5ff'],
+  ['#ff1744', '#ff5252', '#ff8a80'],
+  ['#f06292', '#ba68c8', '#64b5f6'],
+];
+
+function randomPalette() {
+  return palettes[Math.floor(Math.random() * palettes.length)];
+}
+
+class Heart {
+  constructor(x, y) {
+    this.x = x || Math.random() * W;
+    this.y = y || H + 50;
+    this.size = 0.3 + Math.random() * 2.2;
+    this.speedY = 0.8 + Math.random() * 3.5;
+    this.speedX = (Math.random() - 0.5) * 2.5;
+    this.wobble = Math.random() * Math.PI * 2;
+    this.wobbleSpeed = 0.01 + Math.random() * 0.04;
+    this.wobbleAmp = 0.3 + Math.random() * 1.5;
+    this.opacity = 0.4 + Math.random() * 0.6;
+    this.colors = randomPalette();
+    this.currentColor = this.colors[Math.floor(Math.random() * 3)];
+    this.rotation = (Math.random() - 0.5) * 0.5;
+    this.rotSpeed = (Math.random() - 0.5) * 0.03;
+    this.scalePulse = 0;
+    this.pulseSpeed = 0.02 + Math.random() * 0.05;
+    this.life = 1;
+    this.decay = 0.001 + Math.random() * 0.004;
+    this.trail = [];
+  }
+
+  update() {
+    this.y -= this.speedY;
+    this.wobble += this.wobbleSpeed;
+    this.x += this.speedX + Math.sin(this.wobble) * this.wobbleAmp;
+    this.rotation += this.rotSpeed;
+    this.scalePulse += this.pulseSpeed;
+    this.life -= this.decay;
+
+    // 拖尾
+    this.trail.push({ x: this.x, y: this.y, life: 1 });
+    if (this.trail.length > 12) this.trail.shift();
+    for (let t of this.trail) t.life -= 0.08;
+
+    return this.y < -80 || this.life <= 0;
+  }
+
+  draw(ctx) {
+    // 拖尾效果
+    for (let i = 0; i < this.trail.length - 1; i++) {
+      const t = this.trail[i];
+      if (t.life <= 0) continue;
+      const s = this.size * 0.4 * (i / this.trail.length) * t.life;
+      heartPath(t.x, t.y, s);
+      ctx.fillStyle = this.currentColor;
+      ctx.globalAlpha = this.opacity * 0.3 * t.life;
+      ctx.fill();
+    }
+
+    ctx.globalAlpha = this.opacity * this.life;
+    const pulseScale = 1 + Math.sin(this.scalePulse) * 0.15;
+    const s = this.size * pulseScale;
+
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.rotation);
+
+    // 光晕
+    const grad = ctx.createRadialGradient(0, 0, s * 2, 0, 0, s * 8);
+    grad.addColorStop(0, this.currentColor);
+    grad.addColorStop(0.5, this.colors[1]);
+    grad.addColorStop(1, 'transparent');
+    ctx.fillStyle = grad;
+    ctx.globalAlpha = this.opacity * this.life * 0.4;
+    ctx.beginPath();
+    ctx.arc(0, 0, s * 10, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 爱心主体
+    heartPath(0, 0, s);
+    const bodyGrad = ctx.createLinearGradient(0, -s * 7, 0, s * 7);
+    bodyGrad.addColorStop(0, this.colors[0]);
+    bodyGrad.addColorStop(0.5, this.currentColor);
+    bodyGrad.addColorStop(1, this.colors[2] || this.colors[0]);
+    ctx.fillStyle = bodyGrad;
+    ctx.globalAlpha = this.opacity * this.life;
+    ctx.fill();
+
+    // 高光
+    heartPath(0, -s * 2, s * 0.6);
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.globalAlpha = this.opacity * this.life * 0.5;
+    ctx.fill();
+
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  }
+}
+
+class Sparkle {
+  constructor(x, y) {
+    this.x = x; this.y = y;
+    this.vx = (Math.random() - 0.5) * 6;
+    this.vy = (Math.random() - 0.5) * 6;
+    this.life = 1;
+    this.decay = 0.015 + Math.random() * 0.04;
+    this.size = 0.5 + Math.random() * 2.5;
+    this.color = ['#fff','#ffeb3b','#ff80ab','#ea80fc','#80d8ff'][Math.floor(Math.random()*5)];
+  }
+  update() {
+    this.x += this.vx; this.y += this.vy;
+    this.vy += 0.04;
+    this.life -= this.decay;
+    return this.life <= 0;
+  }
+  draw(ctx) {
+    ctx.fillStyle = this.color;
+    ctx.globalAlpha = this.life;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+}
+
+// 点击生成爱心爆发
+function burst(x, y, count) {
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const dist = 30 + Math.random() * 120;
+    const hx = x + Math.cos(angle) * dist;
+    const hy = y + Math.sin(angle) * dist;
+    const heart = new Heart(hx, hy);
+    heart.speedY = -1 + Math.random() * -3;
+    heart.speedX = Math.cos(angle) * (1 + Math.random() * 3);
+    heart.size = 0.2 + Math.random() * 1.5;
+    heart.life = 1;
+    heart.decay = 0.006 + Math.random() * 0.01;
+    hearts.push(heart);
+  }
+  // 火花
+  for (let i = 0; i < count * 2; i++) {
+    sparkles.push(new Sparkle(x, y));
+  }
+}
+
+// 点击事件
+canvas.addEventListener('click', (e) => {
+  burst(e.clientX, e.clientY, 12 + Math.floor(Math.random() * 15));
+});
+
+// 触屏
+canvas.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  for (let t of e.touches) {
+    burst(t.clientX, t.clientY, 8 + Math.floor(Math.random() * 10));
+  }
+}, { passive: false });
+
+// 底部持续生成
+function spawnBottom() {
+  hearts.push(new Heart());
+  if (hearts.length < 80) {
+    setTimeout(spawnBottom, 200 + Math.random() * 500);
+  }
+}
+
+// 场景中央的大爱心（每几秒出现一次）
+function spawnCenterHeart() {
+  const h = new Heart(W / 2 + (Math.random() - 0.5) * 200, H / 2 + (Math.random() - 0.5) * 100);
+  h.size = 4 + Math.random() * 6;
+  h.speedY = 0.3 + Math.random() * 0.5;
+  h.speedX = (Math.random() - 0.5) * 0.8;
+  h.life = 1;
+  h.decay = 0.002 + Math.random() * 0.003;
+  h.opacity = 0.25 + Math.random() * 0.25;
+  hearts.push(h);
+  // 大爱心周围的小爱心
+  for (let i = 0; i < 8; i++) {
+    const angle = (Math.PI * 2 / 8) * i;
+    const sx = h.x + Math.cos(angle) * (60 + Math.random() * 80);
+    const sy = h.y + Math.sin(angle) * (60 + Math.random() * 80);
+    const small = new Heart(sx, sy);
+    small.size = 0.5 + Math.random() * 1.5;
+    small.speedY = Math.sin(angle) * 1.5;
+    small.speedX = Math.cos(angle) * 1.5;
+    small.life = 1;
+    small.decay = 0.004 + Math.random() * 0.006;
+    hearts.push(small);
+  }
+  setTimeout(spawnCenterHeart, 3000 + Math.random() * 4000);
+}
+
+// ---- 动画循环 ----
+function animate() {
+  ctx.clearRect(0, 0, W, H);
+
+  // 背景粒子
+  ctx.fillStyle = 'rgba(255,255,255,0.015)';
+  ctx.fillRect(0, 0, W, H);
+
+  // 更新 & 绘制爱心
+  for (let i = hearts.length - 1; i >= 0; i--) {
+    const dead = hearts[i].update();
+    hearts[i].draw(ctx);
+    if (dead) hearts.splice(i, 1);
+  }
+
+  // 更新 & 绘制火花
+  for (let i = sparkles.length - 1; i >= 0; i--) {
+    const dead = sparkles[i].update();
+    sparkles[i].draw(ctx);
+    if (dead) sparkles.splice(i, 1);
+  }
+
+  // 维持爱心数量
+  if (hearts.length < 30) spawnBottom();
+
+  requestAnimationFrame(animate);
+}
+
+// ---- 启动 ----
+// 初始爆发
+burst(W / 2, H / 2, 20);
+
+// 底部生成
+spawnBottom();
+
+// 大爱心
+setTimeout(spawnCenterHeart, 1500);
+
+// 定期爱心雨
+setInterval(() => {
+  for (let i = 0; i < 5; i++) {
+    hearts.push(new Heart());
+  }
+}, 2000);
+
+animate();
+
+console.log('💖 爱心已就绪！点击屏幕释放更多爱心 💖');
+</script>
+</body>
+</html>
